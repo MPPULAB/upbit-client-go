@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"fmt"
+	"github.com/MPPULAB/upbit-client-go/producer/kinesis"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/google/uuid"
 	"github.com/spf13/viper"
@@ -25,9 +28,12 @@ type envConfigs struct {
 }
 
 func main() {
+	ctx := context.Background()
+
 	signal.Notify(interrupt, os.Interrupt)
 
 	EnvConfigs = loadEnvVariables()
+	fmt.Println(EnvConfigs)
 
 	tokenString, err := createToken(EnvConfigs.SecretKey, EnvConfigs.AccessKey)
 	if err != nil {
@@ -38,7 +44,7 @@ func main() {
 	headers.Add("Authorization", "Bearer "+tokenString)
 
 	dialer := websocket.Dialer{
-		HandshakeTimeout: 10 * time.Second,
+		HandshakeTimeout: 30 * time.Second,
 	}
 
 	c, _, err := dialer.Dial(UpbitWebsocketUrl, headers)
@@ -52,6 +58,8 @@ func main() {
 
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
+
+	producer := kinesis.NewKinesisProducer()
 
 	for {
 		select {
@@ -68,6 +76,11 @@ func main() {
 			_, message, err := c.ReadMessage()
 			if err != nil {
 				log.Println("read:", err)
+				return
+			}
+
+			err = producer.PutRecord(ctx, message)
+			if err != nil {
 				return
 			}
 
